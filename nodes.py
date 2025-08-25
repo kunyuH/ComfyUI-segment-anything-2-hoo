@@ -47,7 +47,7 @@ class DownloadAndLoadSAM2Model:
     RETURN_TYPES = ("SAM2MODEL",)
     RETURN_NAMES = ("sam2_model",)
     FUNCTION = "loadmodel"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def loadmodel(self, model, segmentor, device, precision):
         if precision != 'fp32' and device == 'cpu':
