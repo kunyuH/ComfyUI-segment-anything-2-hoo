@@ -1,3 +1,5 @@
+from itertools import count
+
 import torch
 from torch.functional import F
 import os
@@ -703,9 +705,109 @@ class Sam2AutoSegmentation:
 
         if not keep_model_loaded:
            model.predictor.model.to(offload_device)
-        
         mask_tensor = torch.stack(out_list, dim=0)
         return (mask_tensor.cpu().float(), segment_image_tensor.cpu().float(), bbox_list)
+
+class Sam2AutoSegmentationHoo:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "sam2_model": ("SAM2MODEL",),
+                "image": ("IMAGE",),
+                "points_per_side": ("INT", {"default": 32}),
+                "points_per_batch": ("INT", {"default": 64}),
+                "pred_iou_thresh": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "stability_score_thresh": ("FLOAT", {"default": 0.95, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "stability_score_offset": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "mask_threshold": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "crop_n_layers": ("INT", {"default": 0}),
+                "box_nms_thresh": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "crop_nms_thresh": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "crop_overlap_ratio": ("FLOAT", {"default": 0.34, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "crop_n_points_downscale_factor": ("INT", {"default": 1}),
+                "min_mask_region_area": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "use_m2m": ("BOOLEAN", {"default": False}),
+                "keep_model_loaded": ("BOOLEAN", {"default": True}),
+            },
+        }
+
+    RETURN_TYPES = ("MASK", "IMAGE", "BBOX",)
+    RETURN_NAMES = ("mask", "segmented_image", "bbox",)
+    FUNCTION = "segment"
+    CATEGORY = "SAM2"
+
+    def segment(self, image, sam2_model, points_per_side, points_per_batch, pred_iou_thresh, stability_score_thresh,
+                stability_score_offset, crop_n_layers, box_nms_thresh, crop_n_points_downscale_factor,
+                min_mask_region_area,
+                use_m2m, mask_threshold, crop_nms_thresh, crop_overlap_ratio, keep_model_loaded):
+
+        offload_device = mm.unet_offload_device()
+        model = sam2_model["model"]
+        device = sam2_model["device"]
+        dtype = sam2_model["dtype"]
+        segmentor = sam2_model["segmentor"]
+
+        if segmentor != 'automaskgenerator':
+            raise ValueError("Loaded model is not SAM2AutomaticMaskGenerator")
+
+        # 设置 SAM2 参数
+        model.points_per_side = points_per_side
+        model.points_per_batch = points_per_batch
+        model.pred_iou_thresh = pred_iou_thresh
+        model.stability_score_thresh = stability_score_thresh
+        model.stability_score_offset = stability_score_offset
+        model.crop_n_layers = crop_n_layers
+        model.box_nms_thresh = box_nms_thresh
+        model.crop_n_points_downscale_factor = crop_n_points_downscale_factor
+        model.crop_nms_thresh = crop_nms_thresh
+        model.crop_overlap_ratio = crop_overlap_ratio
+        model.min_mask_region_area = min_mask_region_area
+        model.use_m2m = use_m2m
+        model.mask_threshold = mask_threshold
+
+        model.predictor.model.to(device)
+
+        B, H, W, C = image.shape
+        image_np = (image.contiguous() * 255).byte().numpy()
+
+        mask_tensors = []
+        colored_overlays = []
+        bbox_list_all = []
+
+        pbar = ProgressBar(B)
+        autocast_condition = not mm.is_device_mps(device)
+
+        with torch.autocast(mm.get_autocast_device(device), dtype=dtype) if autocast_condition else nullcontext():
+            for img_np in image_np:
+                result_dict = model.generate(img_np)
+                masks = [item['segmentation'].astype(np.uint8) for item in result_dict]
+                bboxes = [item['bbox'] for item in result_dict]
+
+                # 给每个 mask 生成不同颜色
+                colors = [tuple(random.choices(range(256), k=3)) for _ in range(len(masks))]
+
+                for mask, color, bbox in zip(masks, colors, bboxes):
+                    mask_tensor = torch.from_numpy(mask)  # [H, W]
+                    mask_tensors.append(mask_tensor)
+
+                    # 彩色可视化
+                    overlay = np.zeros((H, W, 3), dtype=np.uint8)
+                    for i in range(3):
+                        overlay[:, :, i] = mask * color[i]
+                    colored_overlays.append(overlay)
+                    bbox_list_all.append(bbox)
+
+                pbar.update(1)
+
+        # 转换为张量
+        mask_tensor_out = torch.stack(mask_tensors, dim=0).float()  # [N, H, W]
+        segment_image_tensor = torch.from_numpy(np.stack(colored_overlays, axis=0)).float() / 255  # [N, H, W, 3]
+
+        if not keep_model_loaded:
+            model.predictor.model.to(offload_device)
+
+        return (mask_tensor_out.cpu(), segment_image_tensor.cpu(), bbox_list_all)
 
 #WIP    
 # class OwlV2Detector:
@@ -754,6 +856,7 @@ NODE_CLASS_MAPPINGS = {
     "Sam2Segmentation": Sam2Segmentation,
     "Florence2toCoordinates": Florence2toCoordinates,
     "Sam2AutoSegmentation": Sam2AutoSegmentation,
+    "Sam2AutoSegmentationHoo": Sam2AutoSegmentationHoo,
     "Sam2VideoSegmentationAddPoints": Sam2VideoSegmentationAddPoints,
     "Sam2VideoSegmentation": Sam2VideoSegmentation
 }
@@ -762,6 +865,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "Sam2Segmentation": "Sam2Segmentation",
     "Florence2toCoordinates": "Florence2 Coordinates",
     "Sam2AutoSegmentation": "Sam2AutoSegmentation",
+    "Sam2AutoSegmentationHoo": "Sam2AutoSegmentationHoo",
     "Sam2VideoSegmentationAddPoints": "Sam2VideoSegmentationAddPoints",
     "Sam2VideoSegmentation": "Sam2VideoSegmentation"
 }
