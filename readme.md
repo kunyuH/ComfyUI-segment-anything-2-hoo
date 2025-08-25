@@ -23,3 +23,5 @@ to `ComfyUI/models/sam2`
 Original repo:
 
 https://github.com/facebookresearch/segment-anything-2
+
+# 增加 节点Sam2AutoSegmentationHoo  输出全部遮罩
