@@ -127,7 +127,7 @@ class Florence2toCoordinates:
     RETURN_TYPES = ("STRING", "BBOX")
     RETURN_NAMES =("center_coordinates", "bboxes")
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, data, index, batch=False):
         try:
@@ -199,7 +199,7 @@ class Sam2Segmentation:
     RETURN_TYPES = ("MASK", )
     RETURN_NAMES =("mask", )
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, image, sam2_model, keep_model_loaded, coordinates_positive=None, coordinates_negative=None, 
                 individual_objects=False, bboxes=None, mask=None):
@@ -446,7 +446,7 @@ class Sam2VideoSegmentationAddPoints:
     RETURN_TYPES = ("SAM2MODEL", "SAM2INFERENCESTATE", )
     RETURN_NAMES =("sam2_model", "inference_state", )
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, sam2_model, coordinates_positive, frame_index, object_index, image=None, coordinates_negative=None, prev_inference_state=None):
         offload_device = mm.unet_offload_device()
@@ -545,7 +545,7 @@ class Sam2VideoSegmentation:
     RETURN_TYPES = ("MASK", )
     RETURN_NAMES =("mask", )
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, sam2_model, inference_state, keep_model_loaded):
         offload_device = mm.unet_offload_device()
@@ -625,7 +625,7 @@ class Sam2AutoSegmentation:
     RETURN_TYPES = ("MASK", "IMAGE", "BBOX",)
     RETURN_NAMES =("mask", "segmented_image", "bbox" ,)
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, image, sam2_model, points_per_side, points_per_batch, pred_iou_thresh, stability_score_thresh, 
                 stability_score_offset, crop_n_layers, box_nms_thresh, crop_n_points_downscale_factor, min_mask_region_area, 
@@ -735,7 +735,7 @@ class Sam2AutoSegmentationHoo:
     RETURN_TYPES = ("MASK", "IMAGE", "BBOX",)
     RETURN_NAMES = ("mask", "segmented_image", "bbox",)
     FUNCTION = "segment"
-    CATEGORY = "SAM2"
+    CATEGORY = "SAM2-HOO"
 
     def segment(self, image, sam2_model, points_per_side, points_per_batch, pred_iou_thresh, stability_score_thresh,
                 stability_score_offset, crop_n_layers, box_nms_thresh, crop_n_points_downscale_factor,
